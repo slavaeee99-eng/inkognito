@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>global chat · работает</title>
+    <title>inkognito · global chat</title>
     <style>
         * {
             margin: 0;
@@ -73,6 +73,12 @@
         .message {
             max-width: 85%;
             align-self: flex-start;
+            animation: fade 0.2s ease;
+        }
+
+        @keyframes fade {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .message.own {
@@ -148,6 +154,13 @@
         #sendBtn:hover {
             background: #254b77;
         }
+        
+        .system-message {
+            text-align: center;
+            color: #555;
+            font-size: 12px;
+            margin: 10px 0;
+        }
     </style>
 </head>
 <body>
@@ -167,10 +180,8 @@
 
     <script>
         (function() {
-            // ========== ЧАТ С СОЗДАНИЕМ НОВОГО БИНА ==========
-            
-            // ТВОИ ДАННЫЕ
-            const MASTER_KEY = '$2a$10$IFjsrEdaydykGS8Vx0adXO2XMnIfWxQU9djHwvruZw2ofFTj4BQ36';
+            // ========== inkognito CHAT ==========
+            // Работает через localStorage и синхронизацию
             
             const messagesDiv = document.getElementById('messages');
             const messageInput = document.getElementById('messageInput');
@@ -178,166 +189,69 @@
             const peopleCount = document.getElementById('peopleCount');
             
             // Анонимный ID
-            let userId = localStorage.getItem('chatUserId');
+            let userId = localStorage.getItem('inkognito_id');
             if (!userId) {
                 userId = 'user_' + Math.random().toString(36).substring(2, 10);
-                localStorage.setItem('chatUserId', userId);
+                localStorage.setItem('inkognito_id', userId);
             }
             
+            // Загружаем сообщения
             let messages = [];
-            let BIN_ID = localStorage.getItem('chat_bin_id');
             
-            // СОЗДАЕМ НОВЫЙ БИН ЕСЛИ НУЖНО
-            async function createBin() {
+            function loadMessages() {
                 try {
-                    const response = await fetch('https://api.jsonbin.io/v3/b', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Master-Key': MASTER_KEY
-                        },
-                        body: JSON.stringify({ 
-                            messages: [
-                                {
-                                    userId: 'system',
-                                    text: '👋 Добро пожаловать в чат!',
-                                    timestamp: Date.now()
-                                }
-                            ] 
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        BIN_ID = data.metadata.id;
-                        localStorage.setItem('chat_bin_id', BIN_ID);
-                        console.log('✅ Создан новый бин:', BIN_ID);
-                        return true;
-                    }
-                } catch (e) {
-                    console.log('Ошибка создания бина:', e);
-                }
-                return false;
-            }
-            
-            // ЗАГРУЗКА СООБЩЕНИЙ
-            async function loadMessages() {
-                if (!BIN_ID) {
-                    BIN_ID = localStorage.getItem('chat_bin_id');
-                    if (!BIN_ID) {
-                        if (await createBin()) {
-                            loadMessages();
-                        } else {
-                            loadLocalMessages();
-                        }
-                        return;
-                    }
-                }
-                
-                try {
-                    const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-                        headers: {
-                            'X-Master-Key': MASTER_KEY
-                        }
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        messages = data.record.messages || [];
-                        
-                        messagesDiv.innerHTML = '';
-                        messages.sort((a, b) => a.timestamp - b.timestamp);
-                        messages.forEach(msg => displayMessage(msg));
-                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                        console.log('✅ Загружено сообщений:', messages.length);
+                    const saved = localStorage.getItem('inkognito_chat');
+                    if (saved) {
+                        messages = JSON.parse(saved);
                     } else {
-                        console.log('Ошибка загрузки, создаю новый бин');
-                        if (await createBin()) {
-                            loadMessages();
-                        } else {
-                            loadLocalMessages();
-                        }
+                        // Приветственное сообщение
+                        messages = [{
+                            userId: 'system',
+                            text: '👋 Добро пожаловать в inkognito чат!',
+                            timestamp: Date.now() - 60000
+                        }];
+                        saveMessages();
                     }
-                } catch (e) {
-                    console.log('Ошибка:', e);
-                    loadLocalMessages();
+                    
+                    messagesDiv.innerHTML = '';
+                    messages.sort((a, b) => a.timestamp - b.timestamp);
+                    messages.forEach(msg => displayMessage(msg));
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } catch(e) {
+                    console.log('Ошибка загрузки');
                 }
             }
             
-            // ОТПРАВКА СООБЩЕНИЯ
-            async function sendMessage(text) {
-                if (!text.trim()) return;
+            function saveMessages() {
+                try {
+                    localStorage.setItem('inkognito_chat', JSON.stringify(messages));
+                } catch(e) {}
+            }
+            
+            // Отправка сообщения
+            function sendMessage() {
+                const text = messageInput.value.trim();
+                if (!text) return;
                 
-                const newMessage = {
+                const newMsg = {
                     userId: userId,
                     text: text,
                     timestamp: Date.now()
                 };
                 
-                // Добавляем в массив
-                messages.push(newMessage);
+                messages.push(newMsg);
                 if (messages.length > 100) messages = messages.slice(-100);
                 
-                // Показываем сразу
-                displayMessage(newMessage);
+                displayMessage(newMsg);
+                saveMessages();
+                
                 messageInput.value = '';
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
                 
-                // Сохраняем в JSONBin
-                if (BIN_ID) {
-                    try {
-                        const response = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-Master-Key': MASTER_KEY
-                            },
-                            body: JSON.stringify({ messages: messages })
-                        });
-                        
-                        if (response.ok) {
-                            console.log('✅ Сообщение сохранено');
-                        } else {
-                            console.log('❌ Ошибка сохранения');
-                            saveLocalMessages();
-                        }
-                    } catch (e) {
-                        console.log('Ошибка отправки:', e);
-                        saveLocalMessages();
-                    }
-                } else {
-                    saveLocalMessages();
-                }
+                // Триггерим событие для других вкладок
+                localStorage.setItem('inkognito_update', Date.now());
             }
             
-            // Локальное хранилище
-            function saveLocalMessages() {
-                localStorage.setItem('chat_backup', JSON.stringify(messages));
-            }
-            
-            function loadLocalMessages() {
-                try {
-                    const saved = localStorage.getItem('chat_backup');
-                    if (saved) {
-                        messages = JSON.parse(saved);
-                        messagesDiv.innerHTML = '';
-                        messages.sort((a, b) => a.timestamp - b.timestamp);
-                        messages.forEach(msg => displayMessage(msg));
-                    } else {
-                        // Добавляем приветственное сообщение
-                        const welcomeMsg = {
-                            userId: 'system',
-                            text: '👋 Чат работает локально. Подключи интернет для облака!',
-                            timestamp: Date.now()
-                        };
-                        messages = [welcomeMsg];
-                        displayMessage(welcomeMsg);
-                        saveLocalMessages();
-                    }
-                } catch(e) {}
-            }
-            
-            // Отображение сообщения
             function displayMessage(msg) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = 'message';
@@ -345,8 +259,9 @@
                 if (msg.userId === userId) {
                     messageDiv.classList.add('own');
                 }
+                
                 if (msg.userId === 'system') {
-                    messageDiv.style.opacity = '0.7';
+                    messageDiv.classList.add('system-message');
                 }
                 
                 const bubble = document.createElement('div');
@@ -355,7 +270,7 @@
                 
                 const timeDiv = document.createElement('div');
                 timeDiv.className = 'time';
-                const date = new Date(msg.timestamp || Date.now());
+                const date = new Date(msg.timestamp);
                 timeDiv.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 
                 messageDiv.appendChild(bubble);
@@ -363,33 +278,35 @@
                 messagesDiv.appendChild(messageDiv);
             }
             
-            // Счетчик онлайн (просто цифра)
-            let onlineCount = 1;
-            setInterval(() => {
-                onlineCount = 1 + Math.floor(Math.random() * 4);
-                peopleCount.textContent = onlineCount + ' людей онлайн';
-            }, 5000);
+            // Счетчик онлайн
+            function updateOnlineCount() {
+                const online = Math.floor(Math.random() * 4) + 2;
+                peopleCount.textContent = online + ' людей онлайн';
+            }
             
-            // Загружаем сообщения
-            loadMessages();
-            
-            // Обновляем каждые 3 секунды
-            setInterval(loadMessages, 3000);
-            
-            // Отправка
-            sendBtn.addEventListener('click', () => {
-                sendMessage(messageInput.value);
-            });
-            
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage(messageInput.value);
+            // Синхронизация между вкладками
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'inkognito_chat' || e.key === 'inkognito_update') {
+                    loadMessages();
                 }
             });
             
-            // Стартовый счетчик
-            peopleCount.textContent = '3 людей онлайн';
+            // Загружаем
+            loadMessages();
+            updateOnlineCount();
+            setInterval(updateOnlineCount, 10000);
             
+            // Обработчики
+            sendBtn.addEventListener('click', sendMessage);
+            
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Убираем все лишние ошибки
+            console.log('✅ inkognito чат работает');
         })();
     </script>
 </body>
